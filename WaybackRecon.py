@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-wayback_scanner.py  ▸  Concurrent Wayback Machine enumerator
-Author : Reshav Kumar  |  Updated : 2025-06-25
+WaybackRecon  ▸  Concurrent Wayback Machine enumerator
+Author  : Reshav Kumar
+Updated : 2025-06-25
 
 Python ≥3.9 required.
-Third-party (optional) : requests, tqdm
+Third-party (optional): requests, tqdm
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import re
 import signal
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, Field
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, List, Set
@@ -34,15 +35,19 @@ class ScanConfig:
     from_date: str
     to_date: str
     keywords: Set[str] = field(default_factory=set)
-    ignore_ext: Set[str] = field(default_factory=lambda: {
-        "png", "jpg", "jpeg", "gif", "bmp", "svg", "webp", "ico",
-        "tiff", "woff", "woff2", "eot", "ttf", "otf", "js", "css",
-    })
-    sensitive_ext: Set[str] = field(default_factory=lambda: {
-        "bak", "old", "zip", "tar", "gz", "7z", "sql", "env", "git",
-        "conf", "log", "inc", "swp", "save", "tmp", "cache", "backup",
-        "ini", "db",
-    })
+    ignore_ext: Set[str] = field(
+        default_factory=lambda: {
+            "png", "jpg", "jpeg", "gif", "bmp", "svg", "webp", "ico",
+            "tiff", "woff", "woff2", "eot", "ttf", "otf", "js", "css",
+        }
+    )
+    sensitive_ext: Set[str] = field(
+        default_factory=lambda: {
+            "bak", "old", "zip", "tar", "gz", "7z", "sql", "env", "git",
+            "conf", "log", "inc", "swp", "save", "tmp", "cache", "backup",
+            "ini", "db",
+        }
+    )
     ignore_keywords: Set[str] = field(default_factory=lambda: {"robots.txt"})
     workers: int = 32
     timeout: int = 10
@@ -87,14 +92,13 @@ class WaybackScanner:
             r"\.(" + "|".join(re.escape(x) for x in cfg.sensitive_ext) + r")$",
             re.IGNORECASE,
         )
-        if cfg.keywords:
-            self._keyword_re = re.compile(
-                "|".join(re.escape(k) for k in cfg.keywords), re.IGNORECASE
-            )
-        else:
-            self._keyword_re = None
+        self._keyword_re = (
+            re.compile("|".join(re.escape(k) for k in cfg.keywords), re.IGNORECASE)
+            if cfg.keywords
+            else None
+        )
 
-    # ─────────────────── Public entrypoints ───────────────────
+    # ─────────────────── Public entrypoint ───────────────────
 
     def run(self) -> List[ScanResult]:
         """Orchestrate full scan."""
@@ -104,8 +108,7 @@ class WaybackScanner:
         candidates = self._apply_filters(all_urls)
         logging.info("Scanning %d candidate URLs", len(candidates))
 
-        results = self._verify(candidates)
-        return results
+        return self._verify(candidates)
 
     # ─────────────────── Internals ───────────────────
 
@@ -133,12 +136,9 @@ class WaybackScanner:
                 continue
             if self._ignore_ext_re.search(u.split("?")[0]):
                 continue
-
             if self._sensitive_ext_re.search(u):
                 keep.append(u)
-                continue
-
-            if self._keyword_re and self._keyword_re.search(u):
+            elif self._keyword_re and self._keyword_re.search(u):
                 keep.append(u)
         return keep
 
@@ -146,7 +146,6 @@ class WaybackScanner:
         """Check live status & archived snapshot concurrently."""
         results: List[ScanResult] = []
         work = urls.copy()
-
         bar = _maybe_tqdm(work, disable=not self.cfg.progress)
 
         with ThreadPoolExecutor(max_workers=self.cfg.workers) as tp:
@@ -170,13 +169,12 @@ class WaybackScanner:
                 self.WAYBACK_AVAILABLE.format(url=quote(url)),
                 timeout=self.cfg.timeout,
             )
-            snap = (
+            res.found_archive = (
                 r.json()
                 .get("archived_snapshots", {})
                 .get("closest", {})
-                .get("url", None)
+                .get("url")
             )
-            res.found_archive = snap
         except Exception as exc:
             res.notes += f"archive_err:{exc}; "
 
@@ -189,7 +187,7 @@ class WaybackScanner:
 
         return res
 
-    # ─────────────────── Helpers ───────────────────
+    # ─────────────────── Helper ───────────────────
 
     def _sigint(self, *_):
         logging.warning("Interrupted by user, shutting down…")
@@ -213,73 +211,51 @@ def save_results(results: List[ScanResult], path: Path, fmt: str) -> None:
                 line += f"[ARCHIVE] {r.found_archive}\n" if r.found_archive else ""
                 line = line or f"[MISS] {r.url}\n"
                 fp.write(line)
+
     elif fmt == "csv":
         with path.open("w", newline="", encoding="utf-8") as fp:
             writer = csv.writer(fp)
             writer.writerow(["url", "live", "archive"])
             for r in results:
                 writer.writerow([r.url, r.found_live, r.found_archive or ""])
+
     elif fmt == "json":
         with path.open("w", encoding="utf-8") as fp:
             json.dump([r.__dict__ for r in results], fp, indent=2)
+
     else:
-        raise ValueError("Unknown format: %s" % fmt)
+        raise ValueError(f"Unknown format: {fmt}")
+
     logging.info("Results written to %s (%s)", path, fmt.upper())
 
 
-# ────────────────────────────── CLI ──────────────────────────────
+# ────────────────────────────── CLI & helpers ──────────────────────────────
 
 
 def parse_cli(argv: List[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        prog="wayback_scanner",
+        prog="WaybackRecon",
         description="Concurrent Wayback Machine sensitive-file enumerator",
     )
     p.add_argument("-u", "--url", required=True, help="Target domain (example.com)")
     p.add_argument(
-        "-p",
-        "--period",
-        required=True,
-        metavar="FROM-TO",
-        help="Date range (e.g. 20190101-20250625)",
+        "-p", "--period", required=True, metavar="FROM-TO",
+        help="Date range (e.g. 20190101-20250625)"
     )
     p.add_argument(
-        "-k",
-        "--keywords",
-        help="Comma-separated keyword list (password,secret,backup,...)",
+        "-k", "--keywords",
+        help="Comma-separated keyword list (password,secret,backup,...)"
     )
-    p.add_argument(
-        "--ignore-ext",
-        help="Additional ignore extensions (comma list)",
-    )
-    p.add_argument(
-        "--sensitive-ext",
-        help="Additional sensitive extensions (comma list)",
-    )
-    p.add_argument(
-        "-w",
-        "--workers",
-        type=int,
-        default=32,
-        help="Concurrent worker threads (default 32)",
-    )
-    p.add_argument(
-        "-o",
-        "--output",
-        default="wayback_results.txt",
-        help="Output file name (default wayback_results.txt)",
-    )
-    p.add_argument(
-        "--format",
-        choices=("txt", "csv", "json"),
-        default="txt",
-        help="Output format (txt/csv/json)",
-    )
-    p.add_argument(
-        "--no-ssl-verify",
-        action="store_true",
-        help="Disable TLS certificate validation",
-    )
+    p.add_argument("--ignore-ext", help="Extra ignore extensions (comma list)")
+    p.add_argument("--sensitive-ext", help="Extra sensitive extensions (comma list)")
+    p.add_argument("-w", "--workers", type=int, default=32,
+                   help="Concurrent worker threads (default 32)")
+    p.add_argument("-o", "--output", default="wayback_results.txt",
+                   help="Output file name (default wayback_results.txt)")
+    p.add_argument("--format", choices=("txt", "csv", "json"), default="txt",
+                   help="Output format (txt/csv/json)")
+    p.add_argument("--no-ssl-verify", action="store_true",
+                   help="Disable TLS certificate validation")
     p.add_argument("--no-progress", action="store_true", help="Hide progress bar")
     p.add_argument("-v", "--verbose", action="count", default=0, help="Verbosity")
     return p.parse_args(argv)
@@ -293,7 +269,7 @@ def main(argv: List[str] | None = None) -> None:
 
     from_date, to_date = args.period.split("-", 1)
 
-    # Configure logging
+    # Logging
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s: %(message)s",
@@ -303,7 +279,7 @@ def main(argv: List[str] | None = None) -> None:
         domain=args.url,
         from_date=from_date,
         to_date=to_date,
-        keywords=set(k.strip() for k in args.keywords.split(",")) if args.keywords else set(),
+        keywords={k.strip() for k in args.keywords.split(",")} if args.keywords else set(),
         ignore_ext=_merge_lists(ScanConfig.ignore_ext, args.ignore_ext),
         sensitive_ext=_merge_lists(ScanConfig.sensitive_ext, args.sensitive_ext),
         workers=args.workers,
@@ -316,19 +292,35 @@ def main(argv: List[str] | None = None) -> None:
     save_results(Path(args.output), results, args.format)
 
 
-def _merge_lists(default: Set[str], extra: str | None) -> Set[str]:
-    """Helper to merge CLI comma-list into default set."""
-    merged = set(default)
+# ───────────────────────── helper: merge default+CLI lists ─────────────────────────
+
+
+def _merge_lists(default_obj, extra: str | None) -> Set[str]:
+    """
+    Returns a merged set of default + CLI extensions.
+
+    Handles both:
+    • a real set (from an instantiated ScanConfig), or
+    • a dataclass Field (class attribute) whose default_factory produces a set.
+    """
+    if isinstance(default_obj, set):
+        merged: Set[str] = set(default_obj)
+    elif isinstance(default_obj, Field) and callable(default_obj.default_factory):
+        merged = set(default_obj.default_factory())
+    else:
+        merged = set()
+
     if extra:
-        merged.update(x.strip().lower() for x in extra.split(","))
+        merged.update(x.strip().lower() for x in extra.split(",") if x.strip())
+
     return merged
 
 
-# ────────────────────────────── Utilities ──────────────────────────────
+# ────────────────────────────── Misc utilities ──────────────────────────────
 
 
 def _maybe_tqdm(iterable, **kwargs):
-    """Return tqdm(iterable) if tqdm installed else identity iterable."""
+    """Return tqdm(iterable) if tqdm is available else identity iterable."""
     try:
         from tqdm import tqdm
 
