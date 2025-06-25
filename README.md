@@ -1,61 +1,143 @@
 
 # 🕵️‍♂️ WaybackRecon
 
-WaybackRecon is an advanced reconnaissance tool that leverages the Wayback Machine to extract, filter, and analyze historical URLs of a target domain. It helps security researchers, bug bounty hunters, and OSINT professionals discover sensitive files, exposed endpoints, and archived snapshots efficiently. It supports keyword filtering, file extension filters, archived/live checks, and outputs results in TXT, CSV, or JSON formats. Built for speed with multi-threaded scanning.
+**WaybackRecon** is an advanced reconnaissance tool that leverages the **Wayback Machine** (archive.org) to fetch, filter, and analyze historical URLs for a given domain. It helps security researchers, bug‑bounty hunters, DFIR analysts, and OSINT professionals uncover **sensitive files**, legacy endpoints, and forgotten attack surfaces that still linger in archived snapshots or remain live in production.
 
-## Usage Example
+---
+
+## ✨ Key Features
+- **Targeted Wayback scraping** – pull all snapshots for `*.example.com/*` across any custom date range  
+- **Noise‑free filtering** – ignore images, fonts, scripts, and other static assets automatically  
+- **Sensitive‑file detection** – flag secrets such as `.env`, `.sql`, `.bak`, `.log`, etc., or any custom extension list  
+- **Keyword hunting** – search URLs for tokens like `password`, `api`, `backup`, etc. (regex‑powered)  
+- **Live vs. Archived check** – verify if a URL is still reachable (`HEAD 200`) and capture its closest archive snapshot  
+- **Highly concurrent** – thread‑pool architecture (user‑tunable, default 32 workers) for fast scans  
+- **Flexible outputs** – export findings to **TXT**, **CSV**, or **JSON** for downstream tooling  
+- **Progress & logging** – optional tqdm progress bar plus granular `INFO`/`DEBUG` verbosity flags  
+
+---
+
+## 🛠 Installation
+> Python **3.9+** is required.
 
 ```bash
-python wayback_recon.py -u example.com -p 20190101-20250625 -o output.txt
-python wayback_recon.py -u target.com -p 20180101-20241231 -k token,apikey,config -w 64 --format json -o sensitive.json
+# clone the repo
+git clone https://github.com/yourusername/WaybackRecon.git && cd WaybackRecon
+
+# install core dependencies
+pip install -r requirements.txt      # requests, tqdm (optional)
 ```
 
-## Installation
-
-Python 3.9+ required  
-Install dependencies:
+If you only need the bare minimum:
 
 ```bash
-pip install requests tqdm
+pip install requests tqdm            # tqdm is optional but recommended
 ```
 
-## Options
+---
 
-- `-u, --url` → Target domain (e.g., example.com)  
-- `-p, --period` → Date range (e.g., 20190101-20240101)  
-- `-k, --keywords` → Comma-separated keywords (e.g., password,config)  
-- `-o, --output` → Output filename (default: wayback_results.txt)  
-- `--format` → Output format: txt, csv, json  
-- `-w, --workers` → Number of threads (default: 32)  
-- `--ignore-ext` → Extra static file extensions to ignore  
-- `--sensitive-ext` → Extra sensitive file extensions to detect  
-- `--no-progress` → Disable progress bar  
-- `--no-ssl-verify` → Disable SSL verification  
-- `-v, --verbose` → Increase logging verbosity  
+## 🚀 Quick Start
 
-## Example Output
+```bash
+# Pull every snapshot for the domain since 2019, save raw list
+python wayback_recon.py -u example.com -p 20190101-20250625 -o all_urls.txt
+
+# Find .env, .sql, .bak, or anything containing "password" or "token"
+python wayback_recon.py -u example.com -p 2010-2025 \
+    -k password,token \
+    --sensitive-ext env,sql,bak \
+    --format csv -o sensitive_hits.csv
+```
+
+---
+
+## ⚙️ Command‑Line Options
+
+| Flag | Purpose |
+|------|---------|
+| `-u, --url` | Target root domain (e.g. `example.com`) |
+| `-p, --period` | Date range `FROM-TO` (YYYYMMDD), e.g. `20190101-20250625` |
+| `-k, --keywords` | Comma‑separated keyword list (`password,config,backup`) |
+| `-o, --output` | Output filename _(default `wayback_results.txt`)_ |
+| `--format` | Output style: `txt`, `csv`, `json` _(default `txt`)_ |
+| `-w, --workers` | Thread count _(default 32)_ |
+| `--ignore-ext` | Extra extensions to skip (comma‑list) |
+| `--sensitive-ext` | Extra sensitive extensions to flag |
+| `--no-progress` | Disable tqdm bar |
+| `--no-ssl-verify` | Skip TLS certificate validation |
+| `-v / -vv` | Increase log verbosity |
+
+Run `python wayback_recon.py -h` anytime to see the full help text.
+
+---
+
+## 🔎 Interpreting Results
+
+| Tag | Meaning |
+|-----|---------|
+| `[LIVE]` | URL responded with HTTP status <400 during scan |
+| `[ARCHIVE]` | Closest archived snapshot URL returned by the Wayback API |
+| `[MISS]` | Neither live nor archived match available (snapshot may exist outside range) |
+
+Example TXT output:
 
 ```
-[LIVE] https://example.com/.env  
-[ARCHIVE] https://web.archive.org/web/20210612075830/https://example.com/backup.sql  
+[LIVE] https://example.com/.env
+[ARCHIVE] https://web.archive.org/web/20210612075830/https://example.com/backup.sql
 [MISS] https://example.com/robots.txt
 ```
 
-## Use Cases
+---
 
-- Bug bounty reconnaissance  
-- Sensitive file exposure hunting  
-- Hidden endpoint discovery  
-- OSINT and historical web app analysis
+## 🎯 Practical Use Cases
+- Map forgotten sub‑directories before running active scans  
+- Identify leaked secrets or configuration files left in prior deploys  
+- Correlate API endpoints between historical and current versions  
+- Feed discovered URLs into vulnerability scanners (Burp, Nuclei, etc.)  
+- Support **DFIR** workflows by reconstructing an application's past attack surface  
 
-## Disclaimer
+---
 
-This tool is for **educational and authorized testing purposes only**. Do not scan targets without proper permission.
+## 🗺 Roadmap
+- [ ] Asynchronous `httpx` backend for even faster scans  
+- [ ] Passive DNS enrichment & subdomain expansion  
+- [ ] Burp/ZAP extension export  
+- [ ] Slack / Discord webhook reporting  
+- [ ] Docker image & GitHub Action for CI/CD pipelines  
 
-## Author
+Have an idea? [Open an issue](https://github.com/yourusername/WaybackRecon/issues) or submit a PR!
 
-**Reshav Kumar**  
-GitHub: [@ReshavKumar](https://github.com/)  
-Email: reshav@example.com
+---
 
-⭐ If you like this tool, give it a star!
+## 🤝 Contributing
+1. Fork the project & create your feature branch (`git checkout -b feature/AmazingFeature`)  
+2. Commit your changes with clear messages  
+3. Push to the branch (`git push origin feature/AmazingFeature`)  
+4. Open a Pull Request  
+
+Please run `pre-commit run --all-files` (if configured) and ensure unit tests pass.
+
+---
+
+## 📜 License
+WaybackRecon is released under the **MIT License**. See [`LICENSE`](LICENSE) for details.
+
+---
+
+## ⚠️ Disclaimer
+WaybackRecon is provided **for educational and authorized security‑testing purposes only**. Scanning domains without explicit permission may violate the law. The author assumes **no liability** for misuse.
+
+---
+
+## 👤 Author
+**Reshav ji**  
+- Email: <reshavkumar9837@gmail.com>  
+- LinkedIn / GitHub: [@ReshavKumar](https://github.com/Reshavji)
+
+---
+
+## ⭐ Support & Feedback
+If you find WaybackRecon useful, **star the repo** and spread the word!  
+Issues, bugs, or feature requests? Please open an issue or contact me on email.
+
+Happy recon 🕵️‍♂️🚀
