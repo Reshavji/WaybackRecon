@@ -105,7 +105,7 @@ Example TXT output:
 - [ ] Slack / Discord webhook reporting  
 - [ ] Docker image & GitHub Action for CI/CD pipelines  
 
-Have an idea? [Open an issue](https://github.com/yourusername/WaybackRecon/issues) or submit a PR!
+Have an idea? [Open an issue](https://github.com/Reshavji/WaybackRecon/issues) or submit a PR!
 
 ---
 
